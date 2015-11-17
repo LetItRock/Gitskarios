@@ -4,9 +4,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
-import android.util.Pair;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
@@ -14,16 +12,13 @@ import android.view.ViewGroup;
 import android.widget.LinearBreadcrumb;
 import android.widget.Toast;
 import com.alorma.github.R;
-import com.alorma.github.sdk.bean.dto.response.Content;
 import com.alorma.github.sdk.bean.dto.response.GitTree;
+import com.alorma.github.sdk.bean.dto.response.GitTreeEntry;
 import com.alorma.github.sdk.bean.info.FileInfo;
 import com.alorma.github.sdk.bean.info.RepoInfo;
 import com.alorma.github.sdk.services.content.GetArchiveLinkService;
 import com.alorma.github.sdk.services.git.GetGitTreeClient;
 import com.alorma.github.sdk.services.repo.GetRepoBranchesClient;
-import com.alorma.github.sdk.services.repo.GetRepoContentsClient;
-import com.alorma.github.ui.ErrorHandler;
-import com.alorma.github.ui.activity.ContentCommitsActivity;
 import com.alorma.github.ui.activity.FileActivity;
 import com.alorma.github.ui.adapter.detail.repo.RepoSourceAdapter;
 import com.alorma.github.ui.callbacks.DialogBranchesCallback;
@@ -34,17 +29,19 @@ import com.mikepenz.octicons_typeface_library.Octicons;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import retrofit.RetrofitError;
+import rx.Observable;
 import rx.Observer;
-import rx.Subscriber;
 import rx.android.schedulers.AndroidSchedulers;
+import rx.functions.Func1;
+import rx.functions.Func2;
+import rx.schedulers.Schedulers;
 
 /**
  * Created by Bernat on 20/07/2014.
  */
 public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
-    implements TitleProvider, BranchManager,
-    LinearBreadcrumb.SelectionCallback, BackManager, RepoSourceAdapter.SourceAdapterListener {
+    implements TitleProvider, BranchManager, LinearBreadcrumb.SelectionCallback, BackManager,
+    RepoSourceAdapter.SourceAdapterListener {
 
   private static final String REPO_INFO = "REPO_INFO";
 
@@ -52,7 +49,7 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
 
   private LinearBreadcrumb breadCrumbs;
   private String currentPath;
-  private Observer<Pair<List<Content>, Integer>> subscriber;
+  private Observer<List<GitTreeEntry>> subscriber;
 
   public static SourceListFragment newInstance(RepoInfo repoInfo) {
     Bundle bundle = new Bundle();
@@ -67,32 +64,31 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
 
-    subscriber = new Observer<Pair<List<Content>, Integer>>() {
+    subscriber = new Observer<List<GitTreeEntry>>() {
       @Override
       public void onCompleted() {
-        stopRefresh();
+
       }
 
       @Override
       public void onError(Throwable e) {
-        stopRefresh();
-        if (getActivity() != null) {
-          if (getAdapter() == null || getAdapter().getItemCount() == 0) {
-            if (e != null
-                && e instanceof RetrofitError
-                && ((RetrofitError) e).getResponse() != null) {
-              setEmpty(true, ((RetrofitError) e).getResponse().getStatus());
-            }
-          }
-          ErrorHandler.onError(getActivity(), "FilesTreeFragment", e);
-        }
+        showError();
       }
 
       @Override
-      public void onNext(Pair<List<Content>, Integer> listIntegerPair) {
-        onContentLoaded(listIntegerPair.first);
+      public void onNext(List<GitTreeEntry> o) {
+        displayContent(o);
       }
     };
+  }
+
+  private void showError() {
+    stopRefresh();
+    if (getActivity() != null) {
+      if (getAdapter() == null || getAdapter().getItemCount() == 0) {
+        setEmpty(false);
+      }
+    }
   }
 
   @Override
@@ -129,7 +125,7 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
           builder.append("/");
         }
         String path = builder.toString();
-        getPathContent(path.substring(0, path.length() - 1));
+        // TODO getPathContent(path.substring(0, path.length() - 1));
       } else {
         getContent();
       }
@@ -154,9 +150,22 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
 
     breadCrumbs.initRootCrumb();
 
-    GetRepoContentsClient repoContentsClient = new GetRepoContentsClient(getActivity(), repoInfo);
-    repoContentsClient.observable()
+    GetGitTreeClient treeClient = new GetGitTreeClient(getActivity(), repoInfo, false);
+    treeClient.observable()
+        .subscribeOn(Schedulers.io())
         .observeOn(AndroidSchedulers.mainThread())
+        .flatMap(new Func1<GitTree, Observable<GitTreeEntry>>() {
+          @Override
+          public Observable<GitTreeEntry> call(GitTree gitTree) {
+            return Observable.from(gitTree.tree);
+          }
+        })
+        .toSortedList(new Func2<GitTreeEntry, GitTreeEntry, Integer>() {
+          @Override
+          public Integer call(GitTreeEntry entry, GitTreeEntry entry2) {
+            return entry.compareTo(entry2);
+          }
+        })
         .subscribe(subscriber);
   }
 
@@ -170,38 +179,49 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
     return R.string.no_content;
   }
 
-  private void displayContent(List<Content> contents) {
+  private void displayContent(List<GitTreeEntry> contents) {
     if (getActivity() != null) {
-      stopRefresh();
+      if (!contents.isEmpty()) {
+        stopRefresh();
 
-      if (currentPath != null) {
-        breadCrumbs.addPath(currentPath, "/");
+        if (currentPath != null) {
+          breadCrumbs.addPath(currentPath, "/");
+        }
+
+        RepoSourceAdapter contentAdapter =
+            new RepoSourceAdapter(getActivity(), LayoutInflater.from(getActivity()));
+        contentAdapter.setSourceAdapterListener(this);
+        contentAdapter.addAll(contents);
+        setAdapter(contentAdapter);
       }
-
-      RepoSourceAdapter contentAdapter =
-          new RepoSourceAdapter(getActivity(), LayoutInflater.from(getActivity()));
-      contentAdapter.setSourceAdapterListener(this);
-      contentAdapter.addAll(contents);
-      setAdapter(contentAdapter);
+    } else {
+      setEmpty(false);
     }
   }
 
   @Override
-  public void onContentClick(Content item) {
-    if (item.isDir()) {
-      getPathContent(item.path);
-    } else if (item.isFile()) {
-      FileInfo info = new FileInfo();
-      info.repoInfo = repoInfo;
-      info.name = item.name;
-      info.path = item.path;
-      Intent intent = FileActivity.createLauncherIntent(getActivity(), info, false);
-      startActivity(intent);
+  public void onContentClick(GitTreeEntry item) {
+    switch (item.type) {
+      case tree:
+        getPathContent(item);
+        break;
+      case blob:
+        FileInfo info = new FileInfo();
+        info.repoInfo = repoInfo;
+        info.name = item.path;
+        info.path = item.path;
+        Intent intent = FileActivity.createLauncherIntent(getActivity(), info, false);
+        startActivity(intent);
+        break;
+      case commit:
+
+        break;
     }
   }
 
   @Override
-  public void onContentMenuAction(Content content, MenuItem menuItem) {
+  public void onContentMenuAction(GitTreeEntry content, MenuItem menuItem) {
+    /* TODO
     switch (menuItem.getItemId()) {
       case R.id.action_content_share:
         Intent shareIntent = new Intent(Intent.ACTION_SEND);
@@ -229,6 +249,7 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
         startActivity(intent);
         break;
     }
+    */
   }
 
   public void copy(String text) {
@@ -255,28 +276,25 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
     getContent();
   }
 
-  private void getPathContent(String path) {
-    currentPath = path;
+  private void getPathContent(GitTreeEntry entry) {
     startRefresh();
 
-    GetRepoContentsClient repoContentsClient =
-        new GetRepoContentsClient(getActivity(), repoInfo, path);
-    repoContentsClient.observable()
+    GetGitTreeClient treeClient = new GetGitTreeClient(getActivity(), repoInfo, entry.sha, false);
+    treeClient.observable().subscribeOn(Schedulers.io())
         .observeOn(AndroidSchedulers.mainThread())
+        .flatMap(new Func1<GitTree, Observable<GitTreeEntry>>() {
+          @Override
+          public Observable<GitTreeEntry> call(GitTree gitTree) {
+            return Observable.from(gitTree.tree);
+          }
+        })
+        .toSortedList(new Func2<GitTreeEntry, GitTreeEntry, Integer>() {
+          @Override
+          public Integer call(GitTreeEntry entry, GitTreeEntry entry2) {
+            return entry.compareTo(entry2);
+          }
+        })
         .subscribe(subscriber);
-  }
-
-  private void onContentLoaded(List<Content> contents) {
-    if (getActivity() != null) {
-      if (contents != null && contents.size() > 0) {
-
-        Collections.sort(contents, Content.Comparators.TYPE);
-
-        displayContent(contents);
-      } else if (getAdapter() == null || getAdapter().getItemCount() == 0) {
-        setEmpty(false);
-      }
-    }
   }
 
   @Override
@@ -313,7 +331,7 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
     if (currentPath == null || currentPath.equals("/")) {
       getContent();
     } else {
-      getPathContent(currentPath);
+      // TODO getPathContent(currentPath);
     }
   }
 
@@ -323,7 +341,7 @@ public class SourceListFragment extends LoadingListFragment<RepoSourceAdapter>
     if (crumb.getPath() != null && crumb.getPath().equals("/")) {
       getContent();
     } else {
-      getPathContent(breadCrumbs.getAbsolutePath(crumb, "/"));
+      // TODO getPathContent(breadCrumbs.getAbsolutePath(crumb, "/"));
     }
     breadCrumbs.setActive(crumb);
   }

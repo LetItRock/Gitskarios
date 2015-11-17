@@ -15,6 +15,8 @@ import android.widget.Toast;
 import com.alorma.github.R;
 import com.alorma.github.sdk.bean.dto.response.Content;
 import com.alorma.github.sdk.bean.dto.response.ContentType;
+import com.alorma.github.sdk.bean.dto.response.GitTreeEntry;
+import com.alorma.github.sdk.bean.dto.response.GitTreeType;
 import com.alorma.github.ui.adapter.base.RecyclerArrayAdapter;
 import com.alorma.github.utils.AttributesUtils;
 import com.mikepenz.iconics.IconicsDrawable;
@@ -23,7 +25,7 @@ import com.mikepenz.octicons_typeface_library.Octicons;
 /**
  * Created by Bernat on 20/07/2014.
  */
-public class RepoSourceAdapter extends RecyclerArrayAdapter<Content, RepoSourceAdapter.ViewHolder> {
+public class RepoSourceAdapter extends RecyclerArrayAdapter<GitTreeEntry, RepoSourceAdapter.ViewHolder> {
 
     private SourceAdapterListener sourceAdapterListener;
 
@@ -37,15 +39,15 @@ public class RepoSourceAdapter extends RecyclerArrayAdapter<Content, RepoSourceA
     }
 
     @Override
-    protected void onBindViewHolder(ViewHolder holder, Content content) {
-        holder.textName.setText(content.name);
+    protected void onBindViewHolder(ViewHolder holder, GitTreeEntry content) {
+        holder.textName.setText(content.path);
 
         IconicsDrawable iconDrawable = null;
-        if (ContentType.dir.equals(content.type)) {
+        if (GitTreeType.tree.equals(content.type)) {
             iconDrawable = new IconicsDrawable(holder.itemView.getContext(), Octicons.Icon.oct_file_directory);
-        } else if (ContentType.submodule.equals(content.type)) {
+        } else if (GitTreeType.commit.equals(content.type)) {
             iconDrawable = new IconicsDrawable(holder.itemView.getContext(), Octicons.Icon.oct_file_symlink_directory);
-        } else if (ContentType.file.equals(content.type)) {
+        } else if (GitTreeType.blob.equals(content.type)) {
             iconDrawable = new IconicsDrawable(holder.itemView.getContext(), Octicons.Icon.oct_file_text);
         }
 
@@ -101,7 +103,7 @@ public class RepoSourceAdapter extends RecyclerArrayAdapter<Content, RepoSourceA
     }
 
     public interface SourceAdapterListener {
-        void onContentClick(Content content);
-        void onContentMenuAction(Content content, MenuItem menuItem);
+        void onContentClick(GitTreeEntry content);
+        void onContentMenuAction(GitTreeEntry content, MenuItem menuItem);
     }
 }
