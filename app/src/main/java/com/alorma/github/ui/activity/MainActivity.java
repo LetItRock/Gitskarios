@@ -123,7 +123,7 @@ public class MainActivity extends BaseActivity implements OnMenuItemSelectedList
       startActivity(intent);
       finish();
     } else {
-      if (!checkGcmToken() && checkPlayServices()) {
+      if (checkPlayServices()) {
         Intent gcmIntent = new Intent(this, RegistrationIntentService.class);
         startService(gcmIntent);
       }
@@ -677,13 +677,6 @@ public class MainActivity extends BaseActivity implements OnMenuItemSelectedList
         onUserEventsSelected();
       }
     }
-  }
-
-  private boolean checkGcmToken() {
-    SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
-
-    return preferences.getBoolean(GcmPreferences.REGISTRATION_COMPLETE, false) &&
-        preferences.getString(GcmPreferences.PLAY_SERVICES_GCM_TOKEN, null) != null;
   }
 
   private boolean checkPlayServices() {

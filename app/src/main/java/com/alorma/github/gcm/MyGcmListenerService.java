@@ -43,15 +43,9 @@ public class MyGcmListenerService extends GcmListenerService {
     // [START receive_message]
     @Override
     public void onMessageReceived(String from, Bundle data) {
-        String message = data.getString("message");
-        Log.d(TAG, "From: " + from);
-        Log.d(TAG, "Message: " + message);
-
-        if (from.startsWith("/topics/")) {
-            // message received from some topic.
-        } else {
-            // normal downstream message.
-        }
+        String type = data.getString("push_type");
+        String repositoryId = data.getString("repository_id");
+        String repositoryName = data.getString("repository_name");
 
         // [START_EXCLUDE]
         /**
@@ -65,7 +59,7 @@ public class MyGcmListenerService extends GcmListenerService {
          * In some cases it may be useful to show a notification indicating to the user
          * that a message was received.
          */
-        sendNotification(message);
+        sendNotification(type, repositoryId, repositoryName);
         // [END_EXCLUDE]
     }
     // [END receive_message]
@@ -73,9 +67,8 @@ public class MyGcmListenerService extends GcmListenerService {
     /**
      * Create and show a simple notification containing the received GCM message.
      *
-     * @param message GCM message received.
      */
-    private void sendNotification(String message) {
+    private void sendNotification(String type, String repositoryId, String repositoryName) {
         // TODO
         /*
         Intent intent = new Intent(this, MainActivity.class);
@@ -86,8 +79,8 @@ public class MyGcmListenerService extends GcmListenerService {
         Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
         NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this)
                 .setSmallIcon(R.drawable.ic_stat_name)
-                .setContentTitle("Gitskarios")
-                .setContentText(message)
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText(type + ": " + repositoryName)
                 .setAutoCancel(true)
                 .setSound(defaultSoundUri);
                 //.setContentIntent(pendingIntent);
@@ -95,6 +88,6 @@ public class MyGcmListenerService extends GcmListenerService {
         NotificationManager notificationManager =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 
-        notificationManager.notify(0 /* ID of notification */, notificationBuilder.build());
+        notificationManager.notify(0, notificationBuilder.build());
     }
 }
