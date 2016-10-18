@@ -16,8 +16,8 @@ import com.alorma.github.injector.component.ApiComponent;
 import com.alorma.github.injector.component.ApplicationComponent;
 import com.alorma.github.injector.component.DaggerApiComponent;
 import com.alorma.github.injector.module.ApiModule;
-import com.alorma.github.presenter.Presenter;
-import com.alorma.github.presenter.issue.UserIssuesPresenter;
+import com.alorma.github.injector.module.issues.UserIssuesModule;
+import com.alorma.github.presenter.issue.UserIssuesBaseRxPresenter;
 import com.alorma.github.sdk.bean.info.IssueInfo;
 import com.alorma.github.sdk.bean.info.RepoInfo;
 import com.alorma.github.ui.activity.IssueDetailActivity;
@@ -33,10 +33,10 @@ import java.util.List;
 import javax.inject.Inject;
 
 public abstract class UserIssuesListFragment extends BaseFragment
-    implements TitleProvider, Presenter.Callback<List<Issue>>, RecyclerArrayAdapter.RecyclerAdapterContentListener,
+    implements TitleProvider, com.alorma.github.presenter.View<List<Issue>>, RecyclerArrayAdapter.RecyclerAdapterContentListener,
     RecyclerArrayAdapter.ItemCallback<Issue> {
 
-  @Inject UserIssuesPresenter presenter;
+  @Inject UserIssuesBaseRxPresenter presenter;
   @Inject AccountNameProvider accountNameProvider;
 
   private SwipeRefreshLayout refreshLayout;
@@ -49,7 +49,8 @@ public abstract class UserIssuesListFragment extends BaseFragment
 
     ApiComponent apiComponent = DaggerApiComponent.builder().applicationComponent(applicationComponent).apiModule(new ApiModule()).build();
 
-    apiComponent.inject(this);
+    apiComponent.plus(new UserIssuesModule()).inject(this);
+    presenter.attachView(this);
   }
 
   @Nullable
@@ -82,8 +83,14 @@ public abstract class UserIssuesListFragment extends BaseFragment
     loadItems();
   }
 
+  @Override
+  public void onPause() {
+    super.onPause();
+    presenter.detachView();
+  }
+
   private void loadItems() {
-    presenter.load(buildIssueSearchRequest(), this);
+    presenter.execute(buildIssueSearchRequest());
   }
 
   private IssuesSearchRequest buildIssueSearchRequest() {
@@ -92,7 +99,7 @@ public abstract class UserIssuesListFragment extends BaseFragment
 
   @Override
   public void loadMoreItems() {
-    presenter.loadMore(null, this);
+    presenter.executePaginated(null);
   }
 
   @Override
@@ -111,8 +118,8 @@ public abstract class UserIssuesListFragment extends BaseFragment
   }
 
   @Override
-  public void onResponse(List<Issue> issues, boolean firstTime) {
-    if (firstTime) {
+  public void onDataReceived(List<Issue> issues, boolean isFromPaginated) {
+    if (!isFromPaginated) {
       adapter.clear();
     }
     adapter.addAll(issues);
@@ -124,7 +131,7 @@ public abstract class UserIssuesListFragment extends BaseFragment
   }
 
   @Override
-  public void onResponseEmpty() {
+  public void showError(Throwable throwable) {
     if (isResumed()) {
       if (recyclerView != null) {
         Snackbar.make(recyclerView, R.string.no_issues_found, Snackbar.LENGTH_SHORT).show();
